@@ -108,4 +108,29 @@ This file is meant to stay simple and practical, based on real behavior observed
   deactivate
   ```
 
-Keep all development and tests for this project inside the activated venv to make the environment reproducible.
+- Keep all development and tests for this project inside the activated venv to make the environment reproducible.
+
+## 5. Fixed Change Address Implementation (Address Reuse)
+
+We implemented `fixed_change_address_example.py` to demonstrate how to force transaction change to return to a specific address (Index 0) instead of generating new change addresses.
+
+### Why do this?
+- **Standard HD Wallet Behavior**: Automatically generates a new "change address" for every transaction to protect privacy. This makes it hard to link all transactions to a single entity.
+- **Single Address / Address Reuse Behavior**: Some users or specific use cases (like exchange deposit addresses or simple cold storage) prefer to consolidate all funds into a single known address.
+
+### Implementation Details
+The `bitcoinlib` library does not support a `change_address` parameter in its high-level `send_to()` method. We worked around this by manually modifying the transaction before signing:
+
+1. **Create Transaction**: Use `wallet.transaction_create()` to let the library select optimal UTXOs and calculate fees.
+2. **Identify Change Output**: Iterate through `tx.outputs` to find the output marked as `change=True`.
+3. **Modify ScriptPubKey**:
+   - The `Output.address` property is read-only in `bitcoinlib`.
+   - We must manually construct the **P2WPKH ScriptPubKey** (lock script) for the target address.
+   - Logic: `OP_0 <20-byte-pubkey-hash>`
+   - We used `bitcoinlib.encoding.addr_bech32_to_pubkeyhash` to get the hash and `bitcoinlib.scripts.Script` to build the script.
+4. **Sign & Broadcast**: Once the output script is updated, we sign and broadcast the transaction normally.
+
+### Result
+- The transaction sends funds to the recipient.
+- The "change" (leftover funds) is sent back to the wallet's **Index 0 address**.
+- This effectively consolidates funds and prevents the wallet from spreading UTXOs across many new addresses.
