@@ -116,19 +116,76 @@ def check_balance(wallet):
     print(f"Current balance: {balance} satoshis")
     return balance
 
-def send_transaction(wallet, to_address, amount_satoshis, fee_satoshis=1000):
-    """Create and send a transaction on signet."""
-    if wallet.balance() < amount_satoshis + fee_satoshis:
-        print("Insufficient balance!")
-        return None
+def send_with_fixed_change(wallet, to_address, amount_satoshis, change_address, fee_satoshis=1000):
+    """
+    Send a transaction with change always directed to the specified address (Index 0).
+    Uses the manual `p2wpkh_scriptpubkey` helper to construct the change output script.
+    """
+    print(f"\n--- Transaction Details ---")
+    print(f"Recipient : {to_address}")
+    print(f"Amount    : {amount_satoshis:,} sat")
+    print(f"Fee       : {fee_satoshis:,} sat")
+    print(f"Change -> : {change_address} (Fixed to Index 0)")
+    
+    # Update UTXOs
+    wallet.utxos_update()
+    
+    # Create transaction (auto-selects optimal UTXOs)
+    print("\nCreating transaction...")
     try:
-        tx = wallet.send_to(to_address=to_address,
-                            amount=amount_satoshis,
-                            fee=fee_satoshis,
-                            broadcast=True)
-        print("Transaction sent!")
-        print(f"Transaction ID: {tx.txid}")
-        return tx
+        tx = wallet.transaction_create(
+            output_arr=[(to_address, amount_satoshis)],
+            fee=fee_satoshis,
+            number_of_change_outputs=1,
+            min_confirms=0  # Allow spending unconfirmed outputs for testing
+        )
+        
+        print(f"Selected {len(tx.inputs)} input(s), {len(tx.outputs)} output(s)")
+        
+        # Modify change output to use our fixed address
+        change_found = False
+        for output in tx.outputs:
+            if output.change:
+                print(f"\nChange output found: {output.value:,} sat")
+                print(f"Original address: {output.address}")
+                
+                # Generate scriptPubKey for our fixed change address using our manual helper
+                # This demonstrates the practical use of the helper function!
+                script_hex = p2wpkh_scriptpubkey(change_address)
+                
+                # Convert hex string back to bytes for bitcoinlib
+                output.lock_script = bytes.fromhex(script_hex)
+                
+                print(f"Updated to      : {change_address}")
+                print(f"New ScriptPubKey: {script_hex}")
+                change_found = True
+                break
+        
+        if not change_found:
+            print("No change output found (exact amount or error).")
+
+        # Sign and verify
+        print("\nSigning transaction...")
+        tx.sign()
+        
+        if not tx.verify():
+            print("❌ Transaction verification failed!")
+            return None
+        
+        print("✅ Transaction verified")
+        
+        # Broadcast
+        print("\nBroadcasting...")
+        tx.send()
+        
+        if tx.pushed:
+            print(f"\n✅ Transaction sent successfully!")
+            print(f"TxID: {tx.txid}")
+            return tx
+        else:
+            print(f"❌ Broadcast failed: {tx.error}")
+            return None
+
     except Exception as e:
         print(f"Error sending transaction: {e}")
         return None
@@ -170,10 +227,16 @@ def main():
     print("\n4. Example transaction (uncomment when wallet is funded):")
     recipient_address = 'tb1qy7wesaxe39pra897mreqt42g45z2c4wajr3mxu'
     amount_to_send = 10_000  # 10,000 satoshis (0.0001 BTC)
-    print(f"\nSending {amount_to_send} satoshis to {recipient_address}...")
-    # tx = send_transaction(wallet, recipient_address, amount_to_send)
-    # if tx:
-    #     print(f"View on block explorer: https://mempool.space/signet/tx/{tx.txid}")
+    # Using our new function that uses manual scriptPubKey generation for change
+    tx = send_with_fixed_change(
+        wallet=wallet, 
+        to_address=recipient_address, 
+        amount_satoshis=amount_to_send,
+        change_address=address  # <--- Fixed change address (Index 0)
+    )
+    
+    if tx:
+        print(f"View on block explorer: https://mempool.space/signet/tx/{tx.txid}")
 
     # 5. Manual scriptPubKey demonstration
     print("\n5. Manual scriptPubKey generation for the recipient address:")
