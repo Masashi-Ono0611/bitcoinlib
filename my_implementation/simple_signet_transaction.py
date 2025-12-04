@@ -17,7 +17,7 @@ Requirements:
 from bitcoinlib.wallets import Wallet, wallet_exists
 from bitcoinlib.mnemonic import Mnemonic
 from bitcoinlib.transactions import Transaction
-from bitcoinlib.services.services import Service
+# Service import removed (unused)
 from bitcoinlib.keys import HDKey, Key
 
 def create_or_open_signet_wallet(wallet_name='SignetWallet1'):
@@ -103,7 +103,7 @@ def create_or_open_signet_wallet(wallet_name='SignetWallet1'):
     
     return wallet
 
-def get_testnet_address(wallet):
+def get_signet_address(wallet):
     """Show the first (index 0) receive address for this signet wallet.
 
     This does NOT advance the internal key cursor; it always returns the
@@ -190,7 +190,7 @@ def main():
     
     # 2. Get address
     print("\n2. Getting signet address...")
-    address = get_testnet_address(wallet)
+    address = get_signet_address(wallet)
     
     # 3. Check balance
     print("\n3. Checking balance...")
@@ -210,7 +210,6 @@ def main():
             print(f"View on block explorer: https://mempool.space/signet/tx/{tx.txid}")
     except Exception as e:
         print(f"Error sending transaction: {e}")
-    # send_transaction(wallet, '<another_signet_address>', 100000)
     
         
     print("\n=== Demo Complete ===")
