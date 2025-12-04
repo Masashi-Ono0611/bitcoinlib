@@ -149,7 +149,6 @@ def send_transaction(wallet, to_address, amount_satoshis, fee_satoshis=1000):
         
         print(f"Transaction sent!")
         print(f"Transaction ID: {transaction.txid}")
-        print(f"Transaction hash: {transaction.hash}")
         
         return transaction
         
@@ -199,16 +198,22 @@ def main():
     
     # 4. Example: Send transaction (uncomment when funded)
     print("\n4. Example transaction (uncomment when wallet is funded):")
-    print("# Send 100,000 satoshis to another signet address")
+    # Send 10,000 satoshis to another signet address
+    recipient_address = 'tb1qy7wesaxe39pra897mreqt42g45z2c4wajr3mxu'
+    amount_to_send = 10000  # 10,000 satoshis (0.0001 BTC)
+    print(f"\nSending {amount_to_send} satoshis to {recipient_address}...")
+    try:
+        tx = send_transaction(wallet, recipient_address, amount_to_send)
+        if tx:
+            print(f"Transaction sent!")
+            print(f"Transaction ID: {tx.txid}")
+            print(f"View on block explorer: https://mempool.space/signet/tx/{tx.txid}")
+    except Exception as e:
+        print(f"Error sending transaction: {e}")
     # send_transaction(wallet, '<another_signet_address>', 100000)
     
-    # 5. Example: Sweep wallet (uncomment when funded)
-    print("\n5. Example sweep (uncomment when wallet is funded):")
-    print("# Sweep all funds to another signet address")
-    # sweep_wallet(wallet, '<another_signet_address>')
-    
+        
     print("\n=== Demo Complete ===")
-    print("Get signet Bitcoin from a public signet faucet (search: 'bitcoin signet faucet')")
 
 if __name__ == "__main__":
     main()
