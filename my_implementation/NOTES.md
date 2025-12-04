@@ -1,6 +1,7 @@
 # Bitcoin Signet Wallet Notes
 
 This file summarizes what was learned while testing `simple_signet_transaction.py` on Bitcoin Signet.
+This wallet uses native SegWit (P2WPKH) bech32 addresses.
 
 ## 1. HD Wallet basics
 

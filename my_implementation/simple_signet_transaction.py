@@ -19,6 +19,7 @@ from bitcoinlib.mnemonic import Mnemonic
 from bitcoinlib.transactions import Transaction
 # Service import removed (unused)
 from bitcoinlib.keys import HDKey, Key
+# This wallet uses native SegWit (P2WPKH) bech32 addresses
 
 def create_or_open_signet_wallet(wallet_name='SignetWallet1'):
     """Create a new signet wallet if it does not exist, otherwise open existing one.
