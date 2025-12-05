@@ -190,23 +190,6 @@ def send_with_fixed_change(wallet, to_address, amount_satoshis, change_address, 
         print(f"Error sending transaction: {e}")
         return None
 
-def sweep_wallet(wallet, to_address, fee_satoshis=1000):
-    """Sweep all funds from wallet on signet."""
-    wallet.utxos_update()
-    if wallet.balance() == 0:
-        print("No funds to sweep!")
-        return None
-    try:
-        tx = wallet.sweep(to_address=to_address,
-                          fee=fee_satoshis,
-                          broadcast=True)
-        print("All funds swept!")
-        print(f"Transaction ID: {tx.txid}")
-        return tx
-    except Exception as e:
-        print(f"Error sweeping wallet: {e}")
-        return None
-
 def main():
     """Demo workflow demonstrating signet transaction and manual scriptPubKey generation."""
     print("=== Bitcoin Signet Transaction Demo ===\n")
