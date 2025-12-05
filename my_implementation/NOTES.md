@@ -288,3 +288,133 @@ The differences are only *where* this policy is hashed and *where* the unlocking
 By running all three flows end-to-end (P2SH, P2SH-P2WSH, and P2WSH) with the same keys and 1-of-2 policy,
 you can see how only the *placement* and *wrapping* of the policy and signatures changes between the
 legacy and SegWit worlds.
+
+## 9. nLockTime vs CLTV / CSV vs Coinbase Maturity (High-level Overview)
+
+The script `p2wpkh_scriptpubkey_manual_sign_nlocktime.py` adds an **absolute block-height lock** using
+the transaction's `nLockTime` field. This is different from script-level timelocks such as
+`OP_CHECKLOCKTIMEVERIFY` (CLTV) and `OP_CHECKSEQUENCEVERIFY` (CSV), and from the special **coinbase
+100-block maturity** rule.
+
+- **nLockTime (transaction-level non-finality)**
+  - `nLockTime` lives in the transaction header (not in the script).
+  - If `nLockTime > 0` and at least one input has `sequence < 0xffffffff`, then:
+    - The transaction is **non-final** until `current_height_or_time >= nLockTime`.
+    - Non-final transactions **cannot enter the mempool or be mined**.
+  - This is what you see in the nLockTime demo: using a future block height causes
+    `non-final` errors on broadcast; using a height at or below the current height succeeds.
+
+- **CLTV / CSV (script-level timelocks)**
+  - `OP_CHECKLOCKTIMEVERIFY` (CLTV) and `OP_CHECKSEQUENCEVERIFY` (CSV) live inside the locking
+    script (e.g. a P2WSH witnessScript).
+  - The *funding* transaction that creates the UTXO can be mined immediately.
+  - The **spend** transaction must satisfy the script condition:
+    - CLTV: absolute height/time ("not before block X/UNIX-time T").
+    - CSV: relative to the age of the UTXO ("not before N blocks after this UTXO was created").
+  - Intuitively: the UTXO **exists on-chain**, but its spending path is locked by the script
+    until the time/height condition is met.
+
+- **Coinbase 100-block maturity (special consensus rule)**
+  - Coinbase outputs have an extra rule baked into consensus:
+    - They cannot be spent until **100 blocks** have passed (on mainnet; different on some networks).
+  - This is *not* implemented via `nLockTime` or CLTV/CSV.
+  - Validation code treats coinbase-derived UTXOs specially and rejects any spend that occurs
+    before the required number of confirmations.
+
+In short:
+
+- `nLockTime` → "Is this **transaction as a whole** allowed into mempool/blocks yet?"
+- CLTV / CSV → "Is this **UTXO's spending script** satisfied yet?"
+- Coinbase maturity → "Is this **coinbase UTXO** old enough to be spent?" (hard-coded consensus rule).
+
+### 9.1 P2WSH CLTV (single-key) demo scripts
+
+Two additional scripts show how to build and spend a **single-key P2WSH timelock** using
+`OP_CHECKLOCKTIMEVERIFY` (CLTV):
+
+- `p2wsh_cltv_single_create_address.py`
+  - Takes one Signet WIF and an absolute block-height `CLTV locktime`.
+  - Builds a P2WSH witnessScript:
+    - `<locktime> OP_CHECKLOCKTIMEVERIFY OP_DROP <pubkey> OP_CHECKSIG`
+  - Derives the P2WSH address and scriptPubKey from this witnessScript.
+  - The funding transaction to this address can be mined immediately, but the UTXO
+    can only be spent by transactions that satisfy the CLTV condition.
+
+- `p2wsh_cltv_single_spend_manual_sign.py`
+  - Reconstructs the same witnessScript from WIF + CLTV locktime.
+  - Verifies that the reconstructed script matches the provided funding P2WSH address.
+  - Reads UTXO info (prev txid, vout, value) and a destination address.
+  - Lets you specify **two different lock values**:
+    - CLTV locktime (script-level, must equal the funding script's locktime).
+    - Transaction `nLockTime` (tx-level). For CLTV to pass, `nLockTime >= CLTV locktime`.
+  - Manually signs the input and builds the P2WSH witness stack `[<sig>, <witnessScript>]`.
+  - Shows how:
+    - Wrong `nLockTime` (e.g. lower than CLTV) leads to
+      `mandatory-script-verify-flag-failed (Locktime requirement not satisfied)`.
+    - Correct `nLockTime` (>= CLTV and <= current height) lets the tx be accepted.
+
+This pair makes the separation very concrete:
+
+- CLTV locktime (in the script) is the **contract written on the UTXO**.
+- `nLockTime` is the **claim made by this specific transaction**.
+- The node enforces both the **contract** (CLTV) and the **finality rules**
+  (`nLockTime` vs current height and `sequence`).
+
+### 9.2 Bitcoin vs Ethereum (failed timelocks)
+
+It is also useful to contrast how Bitcoin and Ethereum handle failed time-lock
+conditions:
+
+- **Bitcoin**
+  - Scripts (including CLTV/CSV) are used to decide whether a transaction is
+    **valid to be in the mempool or a block**.
+  - If script evaluation fails (e.g. CLTV requirement not satisfied), the
+    transaction is simply **rejected** and never becomes part of the blockchain.
+  - There is no concept of "a transaction that got mined but then reverted due to
+    a script error".
+
+- **Ethereum**
+  - Smart contracts execute **inside** a transaction that is already included in
+    a block.
+  - If a condition fails (`require`, `revert`, etc.), the contract can roll back
+    its state changes, but the **transaction itself remains on-chain** as a
+    failed transaction.
+
+In short:
+
+- Bitcoin: failed script/timelock → transaction is not accepted into the block
+  at all.
+- Ethereum: failed contract condition → transaction is included, but the
+  contract logic reverts its effects.
+
+### 9.3 P2WSH CSV (single-key) demo scripts
+
+The CSV (relative lock) demos mirror the CLTV ones, but use
+`OP_CHECKSEQUENCEVERIFY` (CSV) instead of `OP_CHECKLOCKTIMEVERIFY`.
+
+- `p2wsh_csv_single_create_address.py`
+  - Takes one Signet WIF and a **relative lock** in blocks (e.g. `1`, `5`).
+  - Builds a P2WSH witnessScript:
+    - `<sequence> OP_CHECKSEQUENCEVERIFY OP_DROP <pubkey> OP_CHECKSIG`
+  - Derives the P2WSH address and scriptPubKey from this witnessScript.
+  - The funding transaction to this address can be mined immediately, but the
+    UTXO can only be spent by transactions that satisfy the CSV condition.
+
+- `p2wsh_csv_single_spend_manual_sign.py`
+  - Reconstructs the same witnessScript from WIF + CSV relative lock (blocks).
+  - Verifies that the reconstructed script matches the provided funding
+    P2WSH address.
+  - Reads UTXO info (prev txid, vout, value) and a destination address.
+  - Sets the input **sequence** to the same CSV relative lock value.
+  - Manually signs the input and builds the P2WSH witness stack
+    `[<sig>, <witnessScript>]`.
+  - Demonstrates that:
+    - If the UTXO does **not yet have enough confirmations** relative to the
+      CSV value, script evaluation fails with a locktime-related error and the
+      node rejects the transaction.
+    - Once enough blocks have passed (UTXO age >= CSV blocks), the same spend
+      transaction pattern is accepted.
+
+Together with the CLTV demos, the CSV scripts highlight the difference between
+**absolute time locks** (CLTV + nLockTime) and **relative time locks** (CSV
+based on sequence and UTXO age) in Bitcoin.
