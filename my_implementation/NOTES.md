@@ -288,3 +288,41 @@ The differences are only *where* this policy is hashed and *where* the unlocking
 By running all three flows end-to-end (P2SH, P2SH-P2WSH, and P2WSH) with the same keys and 1-of-2 policy,
 you can see how only the *placement* and *wrapping* of the policy and signatures changes between the
 legacy and SegWit worlds.
+
+## 9. nLockTime vs CLTV / CSV vs Coinbase Maturity (High-level Overview)
+
+The script `p2wpkh_scriptpubkey_manual_sign_nlocktime.py` adds an **absolute block-height lock** using
+the transaction's `nLockTime` field. This is different from script-level timelocks such as
+`OP_CHECKLOCKTIMEVERIFY` (CLTV) and `OP_CHECKSEQUENCEVERIFY` (CSV), and from the special **coinbase
+100-block maturity** rule.
+
+- **nLockTime (transaction-level non-finality)**
+  - `nLockTime` lives in the transaction header (not in the script).
+  - If `nLockTime > 0` and at least one input has `sequence < 0xffffffff`, then:
+    - The transaction is **non-final** until `current_height_or_time >= nLockTime`.
+    - Non-final transactions **cannot enter the mempool or be mined**.
+  - This is what you see in the nLockTime demo: using a future block height causes
+    `non-final` errors on broadcast; using a height at or below the current height succeeds.
+
+- **CLTV / CSV (script-level timelocks)**
+  - `OP_CHECKLOCKTIMEVERIFY` (CLTV) and `OP_CHECKSEQUENCEVERIFY` (CSV) live inside the locking
+    script (e.g. a P2WSH witnessScript).
+  - The *funding* transaction that creates the UTXO can be mined immediately.
+  - The **spend** transaction must satisfy the script condition:
+    - CLTV: absolute height/time ("not before block X/UNIX-time T").
+    - CSV: relative to the age of the UTXO ("not before N blocks after this UTXO was created").
+  - Intuitively: the UTXO **exists on-chain**, but its spending path is locked by the script
+    until the time/height condition is met.
+
+- **Coinbase 100-block maturity (special consensus rule)**
+  - Coinbase outputs have an extra rule baked into consensus:
+    - They cannot be spent until **100 blocks** have passed (on mainnet; different on some networks).
+  - This is *not* implemented via `nLockTime` or CLTV/CSV.
+  - Validation code treats coinbase-derived UTXOs specially and rejects any spend that occurs
+    before the required number of confirmations.
+
+In short:
+
+- `nLockTime` → "Is this **transaction as a whole** allowed into mempool/blocks yet?"
+- CLTV / CSV → "Is this **UTXO's spending script** satisfied yet?"
+- Coinbase maturity → "Is this **coinbase UTXO** old enough to be spent?" (hard-coded consensus rule).
