@@ -115,11 +115,16 @@ def build_csv_witness_script(key: Key, sequence: int) -> bytes:
     """
     pubkey_bytes = bytes.fromhex(key.public_hex)
 
-    # Encode sequence as data (ScriptNum) so it is pushed onto the stack,
-    # not interpreted as an opcode value.
-    seq_bytes = sequence.to_bytes((sequence.bit_length() + 7) // 8 or 1, "little", signed=False)
+    # For small integers 0..16, use OP_0 / OP_1..OP_16 to satisfy MINIMALDATA.
+    # For larger values, encode as ScriptNum bytes and push as data.
+    if sequence == 0:
+        seq_cmd = op.op_0
+    elif 1 <= sequence <= 16:
+        seq_cmd = getattr(op, f"op_{sequence}")
+    else:
+        seq_cmd = sequence.to_bytes((sequence.bit_length() + 7) // 8 or 1, "little", signed=False)
 
-    ws_obj = Script([seq_bytes, op.op_checksequenceverify, op.op_drop, pubkey_bytes, op.op_checksig])
+    ws_obj = Script([seq_cmd, op.op_checksequenceverify, op.op_drop, pubkey_bytes, op.op_checksig])
     witness_script = ws_obj.serialize()
 
     print("\n=== CSV WitnessScript (reconstructed) ===")
@@ -174,6 +179,11 @@ def build_and_sign_csv_spend_tx(
     # 1. Create Transaction object (SegWit). We do not use nLockTime here; CSV is
     # purely relative, based on the input sequence and UTXO age.
     tx = Transaction(network="signet", witness_type="segwit")
+    # BIP68 / BIP112 (CSV) semantics require transaction version >= 2.
+    # bitcoinlib stores version as 4-byte big-endian and reverses it when serializing,
+    # so store 2 as big-endian bytes (b"\x00\x00\x00\x02"). This yields 0x02000000
+    # on the wire, which is the standard encoding.
+    tx.version = (2).to_bytes(4, "big")
 
     # 2. Add the P2WSH input
     prev_txid_bytes = bytes.fromhex(prev_txid_hex)
@@ -269,8 +279,9 @@ def main() -> None:
     print("NOTE:")
     print("  - CSV (OP_CHECKSEQUENCEVERIFY) enforces a *relative* lock based on the input")
     print("    sequence and the age of the UTXO.")
-    print("  - Even if the sequence is set correctly, the node will still reject the")
-    print("    transaction if the UTXO does not yet have enough confirmations.")
+    print("  - Even if the CSV lock (sequence) matches the funding script, the node will")
+    print("    still reject the transaction as non-BIP68-final if the current chain state")
+    print("    has not advanced far enough (i.e. UTXO age in blocks < CSV lock).")
     print("")
 
     key, sequence = read_key_and_sequence()

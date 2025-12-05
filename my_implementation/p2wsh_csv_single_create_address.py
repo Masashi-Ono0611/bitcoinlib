@@ -78,11 +78,17 @@ def build_csv_witness_script(key: Key, sequence: int) -> bytes:
     """
     pubkey_bytes = bytes.fromhex(key.public_hex)
 
-    # Encode sequence as data (ScriptNum) so it is pushed onto the stack,
-    # not interpreted as an opcode value.
-    seq_bytes = sequence.to_bytes((sequence.bit_length() + 7) // 8 or 1, "little", signed=False)
+    # For small integers 0..16, use OP_0 / OP_1..OP_16 to satisfy MINIMALDATA.
+    # For larger values, encode as ScriptNum bytes and push as data.
+    if sequence == 0:
+        seq_cmd = op.op_0
+    elif 1 <= sequence <= 16:
+        # op_1, op_2, ..., op_16 are defined in bitcoinlib.config.opcodes.op
+        seq_cmd = getattr(op, f"op_{sequence}")
+    else:
+        seq_cmd = sequence.to_bytes((sequence.bit_length() + 7) // 8 or 1, "little", signed=False)
 
-    ws_obj = Script([seq_bytes, op.op_checksequenceverify, op.op_drop, pubkey_bytes, op.op_checksig])
+    ws_obj = Script([seq_cmd, op.op_checksequenceverify, op.op_drop, pubkey_bytes, op.op_checksig])
     witness_script = ws_obj.serialize()
 
     print("\n=== CSV WitnessScript (single-key) ===")
