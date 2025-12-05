@@ -386,3 +386,35 @@ In short:
   at all.
 - Ethereum: failed contract condition → transaction is included, but the
   contract logic reverts its effects.
+
+### 9.3 P2WSH CSV (single-key) demo scripts
+
+The CSV (relative lock) demos mirror the CLTV ones, but use
+`OP_CHECKSEQUENCEVERIFY` (CSV) instead of `OP_CHECKLOCKTIMEVERIFY`.
+
+- `p2wsh_csv_single_create_address.py`
+  - Takes one Signet WIF and a **relative lock** in blocks (e.g. `1`, `5`).
+  - Builds a P2WSH witnessScript:
+    - `<sequence> OP_CHECKSEQUENCEVERIFY OP_DROP <pubkey> OP_CHECKSIG`
+  - Derives the P2WSH address and scriptPubKey from this witnessScript.
+  - The funding transaction to this address can be mined immediately, but the
+    UTXO can only be spent by transactions that satisfy the CSV condition.
+
+- `p2wsh_csv_single_spend_manual_sign.py`
+  - Reconstructs the same witnessScript from WIF + CSV relative lock (blocks).
+  - Verifies that the reconstructed script matches the provided funding
+    P2WSH address.
+  - Reads UTXO info (prev txid, vout, value) and a destination address.
+  - Sets the input **sequence** to the same CSV relative lock value.
+  - Manually signs the input and builds the P2WSH witness stack
+    `[<sig>, <witnessScript>]`.
+  - Demonstrates that:
+    - If the UTXO does **not yet have enough confirmations** relative to the
+      CSV value, script evaluation fails with a locktime-related error and the
+      node rejects the transaction.
+    - Once enough blocks have passed (UTXO age >= CSV blocks), the same spend
+      transaction pattern is accepted.
+
+Together with the CLTV demos, the CSV scripts highlight the difference between
+**absolute time locks** (CLTV + nLockTime) and **relative time locks** (CSV
+based on sequence and UTXO age) in Bitcoin.
