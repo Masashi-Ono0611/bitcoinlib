@@ -326,3 +326,63 @@ In short:
 - `nLockTime` → "Is this **transaction as a whole** allowed into mempool/blocks yet?"
 - CLTV / CSV → "Is this **UTXO's spending script** satisfied yet?"
 - Coinbase maturity → "Is this **coinbase UTXO** old enough to be spent?" (hard-coded consensus rule).
+
+### 9.1 P2WSH CLTV (single-key) demo scripts
+
+Two additional scripts show how to build and spend a **single-key P2WSH timelock** using
+`OP_CHECKLOCKTIMEVERIFY` (CLTV):
+
+- `p2wsh_cltv_single_create_address.py`
+  - Takes one Signet WIF and an absolute block-height `CLTV locktime`.
+  - Builds a P2WSH witnessScript:
+    - `<locktime> OP_CHECKLOCKTIMEVERIFY OP_DROP <pubkey> OP_CHECKSIG`
+  - Derives the P2WSH address and scriptPubKey from this witnessScript.
+  - The funding transaction to this address can be mined immediately, but the UTXO
+    can only be spent by transactions that satisfy the CLTV condition.
+
+- `p2wsh_cltv_single_spend_manual_sign.py`
+  - Reconstructs the same witnessScript from WIF + CLTV locktime.
+  - Verifies that the reconstructed script matches the provided funding P2WSH address.
+  - Reads UTXO info (prev txid, vout, value) and a destination address.
+  - Lets you specify **two different lock values**:
+    - CLTV locktime (script-level, must equal the funding script's locktime).
+    - Transaction `nLockTime` (tx-level). For CLTV to pass, `nLockTime >= CLTV locktime`.
+  - Manually signs the input and builds the P2WSH witness stack `[<sig>, <witnessScript>]`.
+  - Shows how:
+    - Wrong `nLockTime` (e.g. lower than CLTV) leads to
+      `mandatory-script-verify-flag-failed (Locktime requirement not satisfied)`.
+    - Correct `nLockTime` (>= CLTV and <= current height) lets the tx be accepted.
+
+This pair makes the separation very concrete:
+
+- CLTV locktime (in the script) is the **contract written on the UTXO**.
+- `nLockTime` is the **claim made by this specific transaction**.
+- The node enforces both the **contract** (CLTV) and the **finality rules**
+  (`nLockTime` vs current height and `sequence`).
+
+### 9.2 Bitcoin vs Ethereum (failed timelocks)
+
+It is also useful to contrast how Bitcoin and Ethereum handle failed time-lock
+conditions:
+
+- **Bitcoin**
+  - Scripts (including CLTV/CSV) are used to decide whether a transaction is
+    **valid to be in the mempool or a block**.
+  - If script evaluation fails (e.g. CLTV requirement not satisfied), the
+    transaction is simply **rejected** and never becomes part of the blockchain.
+  - There is no concept of "a transaction that got mined but then reverted due to
+    a script error".
+
+- **Ethereum**
+  - Smart contracts execute **inside** a transaction that is already included in
+    a block.
+  - If a condition fails (`require`, `revert`, etc.), the contract can roll back
+    its state changes, but the **transaction itself remains on-chain** as a
+    failed transaction.
+
+In short:
+
+- Bitcoin: failed script/timelock → transaction is not accepted into the block
+  at all.
+- Ethereum: failed contract condition → transaction is included, but the
+  contract logic reverts its effects.
