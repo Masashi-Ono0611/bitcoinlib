@@ -240,9 +240,9 @@ To get a spendable P2SH UTXO for the above demo:
 This creates a full educational cycle: **create P2SH address → fund it → manually construct and sign a
 spend transaction → broadcast on Signet**.
 
-## 8. Legacy P2SH vs Native P2WSH 1-of-2 (Quick Comparison)
+## 8. Legacy P2SH, Nested P2SH-P2WSH, and Native P2WSH 1-of-2 (Quick Comparison)
 
-The scripts `p2sh_1of2_*` and `p2wsh_1of2_*` use **exactly the same multisig policy**:
+The scripts `p2sh_1of2_*`, `p2sh_p2wsh_1of2_*`, and `p2wsh_1of2_*` use **exactly the same multisig policy**:
 
 - Policy (both):
   - `OP_1 <pubkey1> <pubkey2> OP_2 OP_CHECKMULTISIG` (1-of-2)
@@ -254,6 +254,12 @@ The differences are only *where* this policy is hashed and *where* the unlocking
   - Legacy P2SH (`p2sh_1of2_*`):
     - `hash160(redeemScript)` → `OP_HASH160 <20-byte-hash> OP_EQUAL`
     - Address is base58 (`2...` on Signet).
+  - Nested P2SH-P2WSH (`p2sh_p2wsh_1of2_*`):
+    - `witnessScript` is hashed with SHA256 and wrapped in a P2WSH **redeemScript**:
+      - `redeemScript = OP_0 <32-byte-SHA256(witnessScript)>`.
+    - The outer P2SH script then uses `hash160(redeemScript)`:
+      - `OP_HASH160 <20-byte-hash160(redeemScript)> OP_EQUAL`.
+    - Address is also base58 (`2...`), but the inner program is SegWit.
   - Native P2WSH (`p2wsh_1of2_*`):
     - `sha256(witnessScript)` → `OP_0 <32-byte-hash>`
     - Address is bech32 (`tb1q...`).
@@ -262,6 +268,10 @@ The differences are only *where* this policy is hashed and *where* the unlocking
   - Legacy P2SH:
     - `scriptSig = OP_0 <sig1> <redeemScript>`
     - Witness is empty.
+  - Nested P2SH-P2WSH:
+    - `scriptSig` only pushes the P2WSH redeemScript:
+      - `scriptSig = <redeemScript = OP_0 <SHA256(witnessScript)>>`.
+    - Witness stack is the same as native P2WSH: `[OP_0, <sig1>, <witnessScript>]`.
   - Native P2WSH:
     - `scriptSig` is empty.
     - Witness stack: `[OP_0, <sig1>, <witnessScript>]`.
@@ -269,8 +279,12 @@ The differences are only *where* this policy is hashed and *where* the unlocking
 - **TxID and malleability**
   - P2SH: txid is computed over the entire transaction **including scriptSig**.
     - Changing the signature or redeemScript changes the txid → malleable.
+  - P2SH-P2WSH: txid is still computed without the witness; the scriptSig only contains
+    the redeemScript (no signatures), so modifying signatures in the witness does *not*
+    change the txid. In practice this behaves like P2WSH for malleability.
   - P2WSH: txid is computed **without** the witness; signatures only affect `wtxid`.
     - This reduces malleability and is one of the main reasons SegWit was introduced.
 
-By running both flows end-to-end (P2SH and P2WSH) with the same keys and 1-of-2 policy, you can see how
-only the *placement* of the policy and signatures changes between the legacy and SegWit worlds.
+By running all three flows end-to-end (P2SH, P2SH-P2WSH, and P2WSH) with the same keys and 1-of-2 policy,
+you can see how only the *placement* and *wrapping* of the policy and signatures changes between the
+legacy and SegWit worlds.
