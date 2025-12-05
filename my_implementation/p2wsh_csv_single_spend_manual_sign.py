@@ -279,8 +279,9 @@ def main() -> None:
     print("NOTE:")
     print("  - CSV (OP_CHECKSEQUENCEVERIFY) enforces a *relative* lock based on the input")
     print("    sequence and the age of the UTXO.")
-    print("  - Even if the sequence is set correctly, the node will still reject the")
-    print("    transaction if the UTXO does not yet have enough confirmations.")
+    print("  - Even if the CSV lock (sequence) matches the funding script, the node will")
+    print("    still reject the transaction as non-BIP68-final if the current chain state")
+    print("    has not advanced far enough (i.e. UTXO age in blocks < CSV lock).")
     print("")
 
     key, sequence = read_key_and_sequence()

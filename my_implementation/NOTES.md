@@ -418,3 +418,20 @@ The CSV (relative lock) demos mirror the CLTV ones, but use
 Together with the CLTV demos, the CSV scripts highlight the difference between
 **absolute time locks** (CLTV + nLockTime) and **relative time locks** (CSV
 based on sequence and UTXO age) in Bitcoin.
+
+## 10. Future learning topics
+
+Based on the current understanding (P2WPKH, P2WSH, P2SH-P2WSH, nLockTime, CLTV,
+and CSV), the next topics to explore are:
+
+- **Fee, mempool, RBF/CPFP**
+  - How fee rate (sats/vB) and transaction size interact
+  - Replace-By-Fee (RBF) and Child-Pays-For-Parent (CPFP) behavior
+- **PSBT flow**
+  - Partially Signed Bitcoin Transactions for multi-step / hardware wallet flows
+- **Miniscript-style policy thinking**
+  - Expressing conditions as policies (and/or/after/before) rather than raw opcodes
+- **Taproot (P2TR) overview**
+  - Key-path vs script-path spends and script trees
+- **Coin selection policies**
+  - Simple strategies for picking UTXOs and the trade-offs between fee, privacy, and UX
