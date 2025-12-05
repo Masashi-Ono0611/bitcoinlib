@@ -435,3 +435,38 @@ and CSV), the next topics to explore are:
   - Key-path vs script-path spends and script trees
 - **Coin selection policies**
   - Simple strategies for picking UTXOs and the trade-offs between fee, privacy, and UX
+
+### 10.1 RBF (Replace-By-Fee) basics
+
+Key points learned from the RBF demos:
+
+- **What "opt-in RBF" means**
+  - Inputs have a 4-byte `nSequence` field.
+  - Under BIP125, if **any input** has `nSequence < 0xfffffffe`, the transaction is
+    considered to have **opted in to RBF**.
+  - In the demos, the low-fee tx used `sequence = 0xfffffffd`, and the higher-fee
+    replacement used `sequence = 0xfffffffe`.
+
+- **Mempool-level replacement, not consensus**
+  - RBF is a **mempool policy**, not a consensus rule.
+  - A higher-fee transaction B can replace a lower-fee transaction A in a node's
+    mempool **only while A is unconfirmed** and has opted-in to RBF.
+  - Once a transaction that spends a UTXO is **confirmed in a block**, that UTXO is
+    consumed and cannot be spent again by another transaction (double-spend rules),
+    regardless of RBF.
+
+- **Fee and feerate conditions**
+  - The replacement transaction must pay a **higher absolute fee / feerate** than the
+    transaction it replaces.
+  - In the demos:
+    - Low-fee tx: `~0.5–0.6 sats/byte`
+    - High-fee tx: a few sats/byte higher, using the same single P2WPKH input.
+
+- **Relationship with sequence, nLockTime, CSV**
+  - `nSequence` is multiplexed across several concepts:
+    - Legacy "final" vs non-final semantics
+    - CLTV / `nLockTime` finality rules
+    - CSV (`OP_CHECKSEQUENCEVERIFY`) relative locks
+    - RBF opt-in (`sequence < 0xfffffffe`)
+  - The RBF demos focused purely on the **"opt-in" side**: using a non-final
+    sequence together with higher-fee replacements to observe mempool behavior.
