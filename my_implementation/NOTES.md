@@ -503,6 +503,85 @@ SIGHASH modes change **what a signature commits to** inside a transaction.
   reference to understand the theory of partial commitments in SIGHASH, but
   is not intended for real-world broadcasting.
 
+### 10.4 Taproot (P2TR) experiments and limitations
+
+Taproot (P2TR) support in this repository's version of bitcoinlib is
+**partial**:
+
+- The library understands script types such as `p2tr` / `p2tr_unlock` and
+  stores them in the DB schema (witness type `p2tr`).
+- The `Address` class can construct P2TR-style addresses when called with
+  `script_type='p2tr', encoding='bech32', witver=1`, and correctly uses
+  witness version 1 (bech32m).
+- However, `transactions.py` explicitly logs that Taproot unlocking scripts
+  are **not supported yet**:
+
+  > "Taproot is not supported at the moment" (when parsing `p2tr_unlock`)
+
+#### 10.4.1 What was actually tested
+
+Using external Taproot-capable wallet software (e.g. Unisat), the following
+experiments were performed on Signet:
+
+- **P2WPKH → P2TR**
+  - Spend a native SegWit v0 P2WPKH UTXO at address like
+    `tb1qy7wesaxe39pra...` into:
+    - `10,000 sats` to a Taproot P2TR address such as
+      `tb1ptphs3ts86vmx2yxva3y62ttq8smx75a04e08qaxqxale7xkt5pcqyjvvtt`.
+    - The remainder back to the same P2WPKH address as change.
+  - Resulting outputs:
+    - One **V1_P2TR** output (`OP_1 <32-byte key>`) with 10k sats.
+    - One **V0_P2WPKH** change output.
+
+- **P2TR → P2WPKH + P2TR change**
+  - Spend the 10k-sat Taproot UTXO via a key-path Taproot spend
+    (single Schnorr-style witness element) into:
+    - `5,000 sats` to the P2WPKH address `tb1qy7wesaxe39pra...`.
+    - `4,858 sats` back to the same P2TR address as change.
+    - ~`142 sats` as fee.
+  - Resulting outputs:
+    - One **V0_P2WPKH** output (5k sats).
+    - One **V1_P2TR** change output (4,858 sats).
+
+These on-chain experiments confirm that:
+
+- Funds can move freely between **v0 (P2WPKH)** and **v1 (P2TR)** outputs.
+- The Taproot scriptPubKey format is correctly represented as
+  `OP_1 <32-byte output key>`.
+
+#### 10.4.2 Why P2TR spend demos are not implemented in this repo
+
+Even though bitcoinlib can:
+
+- Parse Taproot-related script types (`p2tr`, `p2tr_unlock`).
+- Build P2TR-style addresses via `Address(script_type='p2tr', ...)`.
+
+the crucial missing pieces for **fully local Taproot spend construction** are:
+
+- A stable, exposed API for **Taproot key-path/script-path signing** (Schnorr
+  signatures and correct Taproot SIGHASH behavior).
+- A mature implementation of Taproot witness construction that matches
+  full-node consensus behavior.
+
+The library itself emits warnings like:
+
+> "Taproot is not supported at the moment, rest of parsing input transaction
+>  skipped"
+
+Therefore, in this repository I currently treat Taproot as:
+
+- **Address generation and transaction analysis only**:
+  - Generate P2TR addresses for experimentation.
+  - Inspect existing P2TR transactions and UTXOs on Signet.
+- **Actual P2TR spending (signing and broadcasting)**:
+  - Performed via external, Taproot-aware wallet software (e.g. Unisat
+    or Bitcoin Core), not via the custom scripts here.
+
+End-to-end manual spend demos (`P2TR → ...`) are intentionally **not
+implemented** with bitcoinlib in this repo, because doing so reliably would
+require extending or replacing its partial Taproot implementation, which is
+out of scope for these learning notes.
+
 ### 10.1 RBF (Replace-By-Fee) basics
 
 Key points learned from the RBF demos:
