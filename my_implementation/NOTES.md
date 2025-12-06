@@ -436,6 +436,73 @@ and CSV), the next topics to explore are:
 - **Coin selection policies**
   - Simple strategies for picking UTXOs and the trade-offs between fee, privacy, and UX
 
+### 10.3 PSBT and SIGHASH modes (high-level)
+
+The PSBT-style demos (`p2wpkh_psbt_sighash_all_demo.py` and
+`p2wpkh_psbt_sighash_single_anyonecanpay_demo.py`) helped clarify how different
+SIGHASH modes change **what a signature commits to** inside a transaction.
+
+- **SIGHASH_ALL**
+  - "Normal" wallet behavior.
+  - A signature on input *i* commits to:
+    - **All inputs** `[in0, in1, ..., inN]` and
+    - **All outputs** `[out0, out1, ..., outM]`.
+  - Any later change to inputs or outputs invalidates the signature.
+  - Intuitively: "Sign the **entire transaction** as it is".
+
+- **SIGHASH_SINGLE (without ANYONECANPAY)**
+  - For a signature on input *i*:
+    - **Inputs**: still commits to **all inputs** (like SIGHASH_ALL).
+    - **Outputs**: commits only to **output *i*** (same index as the input).
+  - Example mental model:
+    - `input[0] = 10k sats`, `input[1] = 5k sats` (total 15k).
+    - `output[0] = 8k sats → Address B` is **locked by the signature**.
+    - The remaining `7k sats` can later be split into fees and/or other
+      outputs (e.g. `output[1] = 7k → Address C`) **without breaking this
+      particular signature**, as long as the full input set is unchanged.
+  - Intuitively: "Lock my input *i* to a specific output *i*, but leave
+    other outputs flexible".
+
+- **SIGHASH_SINGLE | ANYONECANPAY**
+  - For a signature on input *i*:
+    - **Inputs**: commits only to **input *i*** (due to ANYONECANPAY).
+      Other inputs are *not* part of the signed hash and can be added or
+      changed later.
+    - **Outputs**: commits only to **output *i*** (due to SINGLE).
+      Other outputs are not part of the signed hash and can be added or
+      changed later.
+  - Example mental model:
+    - `input[0] = 10k sats` (my input).
+    - `output[0] = 8k sats → Address B` is **locked by my signature**.
+    - The remaining `2k sats` (fee or change to C, etc.) **and** any
+      additional `input[1], input[2], ...` and `output[1], output[2], ...`
+      are free to be added/changed later by others without invalidating
+      my signature on `input[0]`.
+  - Intuitively: "I only commit to **my own input and its corresponding
+    output**. The rest of the transaction can be assembled later".
+
+#### 10.3.1 Notes about the SINGLE|ANYONECANPAY demo
+
+- The script `p2wpkh_psbt_sighash_single_anyonecanpay_demo.py` is intentionally
+  written as a **didactic PSBT / SIGHASH demo**, not as production-ready code.
+- It successfully shows, at the library level:
+  - How to construct a custom SIGHASH type (`SIGHASH_SINGLE|ANYONECANPAY`).
+  - That the resulting `tx_hash` differs from the SIGHASH_ALL case.
+  - How a signature can conceptually commit only to a single
+    input/output pair.
+- However, when broadcasting to Signet, the node rejects the transaction with:
+
+  > `mandatory-script-verify-flag-failed (Script evaluated without error but
+  > finished with a false/empty top stack element)`
+
+  meaning that the node's view of the SIGHASH_SINGLE|ANYONECANPAY rules does
+  **not match** the way the library computed the hash/signature in this demo.
+
+- In practice, for **real transactions** I should stick to **SIGHASH_ALL**
+  with bitcoinlib. The SINGLE|ANYONECANPAY demo is kept as an educational
+  reference to understand the theory of partial commitments in SIGHASH, but
+  is not intended for real-world broadcasting.
+
 ### 10.1 RBF (Replace-By-Fee) basics
 
 Key points learned from the RBF demos:
@@ -470,3 +537,66 @@ Key points learned from the RBF demos:
     - RBF opt-in (`sequence < 0xfffffffe`)
   - The RBF demos focused purely on the **"opt-in" side**: using a non-final
     sequence together with higher-fee replacements to observe mempool behavior.
+
+### 10.2 CPFP (Child-Pays-For-Parent) basics
+
+Key points learned from the CPFP demos:
+
+- **Who can perform CPFP? (UTXO ownership)**
+  - A child transaction can only spend UTXOs whose **private keys you control**.
+  - Therefore, **you can perform CPFP if and only if at least one output of the parent
+    transaction pays to an address you control** (you have the WIF / key).
+  - It does not matter whether that output is a "payment" output or a "change" output;
+    what matters is **ownership of the UTXO**.
+
+- **No-change scenario (cannot CPFP by yourself)**
+  - If the parent transaction has a single output which goes entirely to someone else,
+    and you do **not** control that address's private key:
+    - You cannot build a child transaction spending that UTXO.
+    - Only the **receiver** can do CPFP by spending that UTXO with a high-fee child.
+
+- **Change output scenario (sender-side CPFP)**
+  - If the parent transaction has at least one **change output** back to an address you
+    control (your own wallet):
+    - You can construct a child transaction that spends your change UTXO.
+    - By paying a high fee in the child, you effectively increase the **combined fee
+      per vbyte** of the parent+child package.
+  - In practice, this is how a sender can rescue a stuck low-fee parent transaction
+    without the cooperation of the receiver.
+
+- **Receiver-side CPFP**
+  - If you receive a UTXO from a low-fee parent transaction (the output is to your
+    address), you can also perform CPFP:
+    - Construct a child transaction that spends your received UTXO.
+    - Pay a high fee in the child to pull both parent and child into a block.
+  - This is often used by wallets that want to accelerate incoming payments.
+
+- **Parent vs child destinations**
+  - CPFP does **not** require a special pattern of destinations; the only requirement
+    is that the child spends at least one output of the parent.
+  - Common patterns:
+    - Parent: pay to receiver + change back to sender; child: spend sender's change.
+    - Parent: pay to receiver; child: receiver spends that UTXO to another self-controlled
+      address or onward payment.
+
+- **Concrete example from the demo (Signet)**
+  - Parent (low-fee) transaction:
+    - 1 P2WPKH input, 1 P2WPKH output to the sender's own address (no explicit change).
+    - Fee ≈ **110 sats**, virtual size ≈ **110 vB** → ≈ **1 sat/vB**.
+  - Child (high-fee) transaction:
+    - Spends the parent output (same P2WPKH key) to the same destination address.
+    - Fee ≈ **1100 sats**, virtual size ≈ **109 vB** → ≈ **10 sat/vB**.
+  - Combined parent+child package (as seen by the mempool):
+    - Total fee ≈ **1210 sats**, total vsize ≈ **219 vB**.
+    - Effective feerate ≈ **1210 / 219 ≈ 5.5 sats/vB**.
+  - On mempool.space this showed up as:
+    - Parent: feerate ≈ **1 sat/vB**.
+    - Descendant child: feerate ≈ **10 sat/vB**.
+    - **Effective fee rate ≈ 5.5 sat/vB** for the package.
+
+In short:
+
+- RBF: you (re)create the **same spend** with a higher-fee replacement transaction,
+  typically keeping the same recipient and only adjusting the fee via the change.
+- CPFP: you create a **new child transaction** that spends the parent UTXO(s) with a
+  high fee, so that miners are incentivized to include both parent and child together.
