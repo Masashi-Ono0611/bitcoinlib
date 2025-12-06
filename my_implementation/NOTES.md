@@ -470,3 +470,66 @@ Key points learned from the RBF demos:
     - RBF opt-in (`sequence < 0xfffffffe`)
   - The RBF demos focused purely on the **"opt-in" side**: using a non-final
     sequence together with higher-fee replacements to observe mempool behavior.
+
+### 10.2 CPFP (Child-Pays-For-Parent) basics
+
+Key points learned from the CPFP demos:
+
+- **Who can perform CPFP? (UTXO ownership)**
+  - A child transaction can only spend UTXOs whose **private keys you control**.
+  - Therefore, **you can perform CPFP if and only if at least one output of the parent
+    transaction pays to an address you control** (you have the WIF / key).
+  - It does not matter whether that output is a "payment" output or a "change" output;
+    what matters is **ownership of the UTXO**.
+
+- **No-change scenario (cannot CPFP by yourself)**
+  - If the parent transaction has a single output which goes entirely to someone else,
+    and you do **not** control that address's private key:
+    - You cannot build a child transaction spending that UTXO.
+    - Only the **receiver** can do CPFP by spending that UTXO with a high-fee child.
+
+- **Change output scenario (sender-side CPFP)**
+  - If the parent transaction has at least one **change output** back to an address you
+    control (your own wallet):
+    - You can construct a child transaction that spends your change UTXO.
+    - By paying a high fee in the child, you effectively increase the **combined fee
+      per vbyte** of the parent+child package.
+  - In practice, this is how a sender can rescue a stuck low-fee parent transaction
+    without the cooperation of the receiver.
+
+- **Receiver-side CPFP**
+  - If you receive a UTXO from a low-fee parent transaction (the output is to your
+    address), you can also perform CPFP:
+    - Construct a child transaction that spends your received UTXO.
+    - Pay a high fee in the child to pull both parent and child into a block.
+  - This is often used by wallets that want to accelerate incoming payments.
+
+- **Parent vs child destinations**
+  - CPFP does **not** require a special pattern of destinations; the only requirement
+    is that the child spends at least one output of the parent.
+  - Common patterns:
+    - Parent: pay to receiver + change back to sender; child: spend sender's change.
+    - Parent: pay to receiver; child: receiver spends that UTXO to another self-controlled
+      address or onward payment.
+
+- **Concrete example from the demo (Signet)**
+  - Parent (low-fee) transaction:
+    - 1 P2WPKH input, 1 P2WPKH output to the sender's own address (no explicit change).
+    - Fee ≈ **110 sats**, virtual size ≈ **110 vB** → ≈ **1 sat/vB**.
+  - Child (high-fee) transaction:
+    - Spends the parent output (same P2WPKH key) to the same destination address.
+    - Fee ≈ **1100 sats**, virtual size ≈ **109 vB** → ≈ **10 sat/vB**.
+  - Combined parent+child package (as seen by the mempool):
+    - Total fee ≈ **1210 sats**, total vsize ≈ **219 vB**.
+    - Effective feerate ≈ **1210 / 219 ≈ 5.5 sats/vB**.
+  - On mempool.space this showed up as:
+    - Parent: feerate ≈ **1 sat/vB**.
+    - Descendant child: feerate ≈ **10 sat/vB**.
+    - **Effective fee rate ≈ 5.5 sat/vB** for the package.
+
+In short:
+
+- RBF: you (re)create the **same spend** with a higher-fee replacement transaction,
+  typically keeping the same recipient and only adjusting the fee via the change.
+- CPFP: you create a **new child transaction** that spends the parent UTXO(s) with a
+  high fee, so that miners are incentivized to include both parent and child together.
