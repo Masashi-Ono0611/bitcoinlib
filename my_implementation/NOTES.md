@@ -436,6 +436,73 @@ and CSV), the next topics to explore are:
 - **Coin selection policies**
   - Simple strategies for picking UTXOs and the trade-offs between fee, privacy, and UX
 
+### 10.3 PSBT and SIGHASH modes (high-level)
+
+The PSBT-style demos (`p2wpkh_psbt_sighash_all_demo.py` and
+`p2wpkh_psbt_sighash_single_anyonecanpay_demo.py`) helped clarify how different
+SIGHASH modes change **what a signature commits to** inside a transaction.
+
+- **SIGHASH_ALL**
+  - "Normal" wallet behavior.
+  - A signature on input *i* commits to:
+    - **All inputs** `[in0, in1, ..., inN]` and
+    - **All outputs** `[out0, out1, ..., outM]`.
+  - Any later change to inputs or outputs invalidates the signature.
+  - Intuitively: "Sign the **entire transaction** as it is".
+
+- **SIGHASH_SINGLE (without ANYONECANPAY)**
+  - For a signature on input *i*:
+    - **Inputs**: still commits to **all inputs** (like SIGHASH_ALL).
+    - **Outputs**: commits only to **output *i*** (same index as the input).
+  - Example mental model:
+    - `input[0] = 10k sats`, `input[1] = 5k sats` (total 15k).
+    - `output[0] = 8k sats → Address B` is **locked by the signature**.
+    - The remaining `7k sats` can later be split into fees and/or other
+      outputs (e.g. `output[1] = 7k → Address C`) **without breaking this
+      particular signature**, as long as the full input set is unchanged.
+  - Intuitively: "Lock my input *i* to a specific output *i*, but leave
+    other outputs flexible".
+
+- **SIGHASH_SINGLE | ANYONECANPAY**
+  - For a signature on input *i*:
+    - **Inputs**: commits only to **input *i*** (due to ANYONECANPAY).
+      Other inputs are *not* part of the signed hash and can be added or
+      changed later.
+    - **Outputs**: commits only to **output *i*** (due to SINGLE).
+      Other outputs are not part of the signed hash and can be added or
+      changed later.
+  - Example mental model:
+    - `input[0] = 10k sats` (my input).
+    - `output[0] = 8k sats → Address B` is **locked by my signature**.
+    - The remaining `2k sats` (fee or change to C, etc.) **and** any
+      additional `input[1], input[2], ...` and `output[1], output[2], ...`
+      are free to be added/changed later by others without invalidating
+      my signature on `input[0]`.
+  - Intuitively: "I only commit to **my own input and its corresponding
+    output**. The rest of the transaction can be assembled later".
+
+#### 10.3.1 Notes about the SINGLE|ANYONECANPAY demo
+
+- The script `p2wpkh_psbt_sighash_single_anyonecanpay_demo.py` is intentionally
+  written as a **didactic PSBT / SIGHASH demo**, not as production-ready code.
+- It successfully shows, at the library level:
+  - How to construct a custom SIGHASH type (`SIGHASH_SINGLE|ANYONECANPAY`).
+  - That the resulting `tx_hash` differs from the SIGHASH_ALL case.
+  - How a signature can conceptually commit only to a single
+    input/output pair.
+- However, when broadcasting to Signet, the node rejects the transaction with:
+
+  > `mandatory-script-verify-flag-failed (Script evaluated without error but
+  > finished with a false/empty top stack element)`
+
+  meaning that the node's view of the SIGHASH_SINGLE|ANYONECANPAY rules does
+  **not match** the way the library computed the hash/signature in this demo.
+
+- In practice, for **real transactions** I should stick to **SIGHASH_ALL**
+  with bitcoinlib. The SINGLE|ANYONECANPAY demo is kept as an educational
+  reference to understand the theory of partial commitments in SIGHASH, but
+  is not intended for real-world broadcasting.
+
 ### 10.1 RBF (Replace-By-Fee) basics
 
 Key points learned from the RBF demos:
